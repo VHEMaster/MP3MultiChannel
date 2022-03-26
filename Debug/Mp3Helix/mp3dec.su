@@ -1,0 +1,8 @@
+../Mp3Helix/mp3dec.c:66:13:MP3InitDecoder	16	static
+../Mp3Helix/mp3dec.c:87:6:MP3FreeDecoder	24	static
+../Mp3Helix/mp3dec.c:110:5:MP3FindSyncWord	24	static
+../Mp3Helix/mp3dec.c:147:12:MP3FindFreeSync	32	static
+../Mp3Helix/mp3dec.c:190:6:MP3GetLastFrameInfo	24	static
+../Mp3Helix/mp3dec.c:227:5:MP3GetNextFrameInfo	32	static
+../Mp3Helix/mp3dec.c:254:13:MP3ClearBadFrame	24	static
+../Mp3Helix/mp3dec.c:286:5:MP3Decode	96	static

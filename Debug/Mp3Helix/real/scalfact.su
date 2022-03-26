@@ -1,0 +1,3 @@
+../Mp3Helix/real/scalfact.c:81:13:UnpackSFMPEG1	40	static
+../Mp3Helix/real/scalfact.c:208:13:UnpackSFMPEG2	96	static
+../Mp3Helix/real/scalfact.c:355:5:xmp3_UnpackScaleFactors	88	static

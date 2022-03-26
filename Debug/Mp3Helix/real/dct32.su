@@ -1,0 +1,2 @@
+../Mp3Helix/real/assembly.h:266:21:MULSHIFT32	24	static,ignoring_inline_asm
+../Mp3Helix/real/dct32.c:142:6:xmp3_FDCT32	128	static
