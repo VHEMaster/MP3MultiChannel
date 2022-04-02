@@ -1,3 +1,0 @@
-../Mp3Helix/real/imdct.c:185:12:FreqInvertRescale	80	static,ignoring_inline_asm
-../Mp3Helix/real/imdct.c:132:13:WinPrevious.part.0	32	static,ignoring_inline_asm
-../Mp3Helix/real/imdct.c:717:5:xmp3_IMDCT	432	static,ignoring_inline_asm

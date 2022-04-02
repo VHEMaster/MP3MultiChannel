@@ -1,9 +1,0 @@
-../Middlewares/Third_Party/FatFs/src/ff.c:2965:6:check_fs	16	static
-../Middlewares/Third_Party/FatFs/src/ff.c:2993:9:find_volume.constprop	32	static
-../Middlewares/Third_Party/FatFs/src/ff.c:1001:7:get_fat.isra	24	static
-../Middlewares/Third_Party/FatFs/src/ff.c:1470:9:dir_sdi.constprop	40	static
-../Middlewares/Third_Party/FatFs/src/ff.c:3260:9:f_mount	24	static
-../Middlewares/Third_Party/FatFs/src/ff.c:3308:9:f_open	648	static
-../Middlewares/Third_Party/FatFs/src/ff.c:3511:9:f_read	48	static
-../Middlewares/Third_Party/FatFs/src/ff.c:3813:9:f_close	16	static
-../Middlewares/Third_Party/FatFs/src/ff.c:4001:9:f_lseek	64	static

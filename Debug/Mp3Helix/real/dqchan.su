@@ -1,2 +1,0 @@
-../Mp3Helix/real/dqchan.c:132:12:DequantBlock	72	static,ignoring_inline_asm
-../Mp3Helix/real/dqchan.c:244:5:xmp3_DequantChannel	104	static
