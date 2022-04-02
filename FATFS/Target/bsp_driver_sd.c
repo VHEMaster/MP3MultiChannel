@@ -38,6 +38,23 @@
 
 extern SD_HandleTypeDef hsd1;
 
+static sSdStats gSdStats = {0};
+
+sSdStats BSP_SD_GetStats(void)
+{
+  sSdStats stats = gSdStats;
+  if(gSdStats.readMax < gSdStats.readLast)
+    gSdStats.readMax = gSdStats.readLast;
+  if(gSdStats.writeMax < gSdStats.writeLast)
+    gSdStats.writeMax = gSdStats.writeLast;
+  gSdStats.readAll += gSdStats.readLast;
+  gSdStats.writeAll += gSdStats.writeLast;
+  gSdStats.readLast = 0;
+  gSdStats.writeLast = 0;
+  return stats;
+
+}
+
 /* USER CODE BEGIN BeforeInitSection */
 /* can be used to modify / undefine following code or add code */
 /* USER CODE END BeforeInitSection */
@@ -103,6 +120,8 @@ __weak uint8_t BSP_SD_ReadBlocks(uint32_t *pData, uint32_t ReadAddr, uint32_t Nu
   if (HAL_SD_ReadBlocks(&hsd1, (uint8_t *)pData, ReadAddr, NumOfBlocks, Timeout) != HAL_OK)
   {
     sd_state = MSD_ERROR;
+  } else {
+    gSdStats.readLast += NumOfBlocks * hsd1.SdCard.BlockSize;
   }
 
   return sd_state;
@@ -126,6 +145,8 @@ __weak uint8_t BSP_SD_WriteBlocks(uint32_t *pData, uint32_t WriteAddr, uint32_t 
   if (HAL_SD_WriteBlocks(&hsd1, (uint8_t *)pData, WriteAddr, NumOfBlocks, Timeout) != HAL_OK)
   {
     sd_state = MSD_ERROR;
+  } else {
+    gSdStats.writeLast += NumOfBlocks * hsd1.SdCard.BlockSize;
   }
 
   return sd_state;
@@ -149,6 +170,8 @@ __weak uint8_t BSP_SD_ReadBlocks_DMA(uint32_t *pData, uint32_t ReadAddr, uint32_
   if (HAL_SD_ReadBlocks_DMA(&hsd1, (uint8_t *)pData, ReadAddr, NumOfBlocks) != HAL_OK)
   {
     sd_state = MSD_ERROR;
+  } else {
+    gSdStats.readLast += NumOfBlocks * hsd1.SdCard.BlockSize;
   }
 
   return sd_state;
@@ -172,6 +195,8 @@ __weak uint8_t BSP_SD_WriteBlocks_DMA(uint32_t *pData, uint32_t WriteAddr, uint3
   if (HAL_SD_WriteBlocks_DMA(&hsd1, (uint8_t *)pData, WriteAddr, NumOfBlocks) != HAL_OK)
   {
     sd_state = MSD_ERROR;
+  } else {
+    gSdStats.writeLast += NumOfBlocks * hsd1.SdCard.BlockSize;
   }
 
   return sd_state;

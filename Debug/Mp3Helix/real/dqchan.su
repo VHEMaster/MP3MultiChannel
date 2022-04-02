@@ -1,4 +1,2 @@
-../Mp3Helix/real/assembly.h:266:21:MULSHIFT32	24	static,ignoring_inline_asm
-../Mp3Helix/real/assembly.h:298:21:CLZ	24	static
-../Mp3Helix/real/dqchan.c:132:12:DequantBlock	80	static
-../Mp3Helix/real/dqchan.c:244:5:xmp3_DequantChannel	96	static
+../Mp3Helix/real/dqchan.c:132:12:DequantBlock	72	static,ignoring_inline_asm
+../Mp3Helix/real/dqchan.c:244:5:xmp3_DequantChannel	104	static

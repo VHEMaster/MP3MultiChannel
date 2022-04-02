@@ -147,12 +147,12 @@ void HAL_SD_MspInit(SD_HandleTypeDef* hsd)
     hdma_sdmmc1_rx.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_sdmmc1_rx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_sdmmc1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
-    hdma_sdmmc1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
+    hdma_sdmmc1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
     hdma_sdmmc1_rx.Init.Mode = DMA_PFCTRL;
-    hdma_sdmmc1_rx.Init.Priority = DMA_PRIORITY_LOW;
+    hdma_sdmmc1_rx.Init.Priority = DMA_PRIORITY_HIGH;
     hdma_sdmmc1_rx.Init.FIFOMode = DMA_FIFOMODE_ENABLE;
     hdma_sdmmc1_rx.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
-    hdma_sdmmc1_rx.Init.MemBurst = DMA_MBURST_INC4;
+    hdma_sdmmc1_rx.Init.MemBurst = DMA_MBURST_SINGLE;
     hdma_sdmmc1_rx.Init.PeriphBurst = DMA_PBURST_INC4;
     if (HAL_DMA_Init(&hdma_sdmmc1_rx) != HAL_OK)
     {
@@ -170,7 +170,7 @@ void HAL_SD_MspInit(SD_HandleTypeDef* hsd)
     hdma_sdmmc1_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
     hdma_sdmmc1_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
     hdma_sdmmc1_tx.Init.Mode = DMA_PFCTRL;
-    hdma_sdmmc1_tx.Init.Priority = DMA_PRIORITY_LOW;
+    hdma_sdmmc1_tx.Init.Priority = DMA_PRIORITY_HIGH;
     hdma_sdmmc1_tx.Init.FIFOMode = DMA_FIFOMODE_ENABLE;
     hdma_sdmmc1_tx.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
     hdma_sdmmc1_tx.Init.MemBurst = DMA_MBURST_SINGLE;
@@ -327,7 +327,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     hdma_usart1_rx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_usart1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_usart1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-    hdma_usart1_rx.Init.Mode = DMA_NORMAL;
+    hdma_usart1_rx.Init.Mode = DMA_CIRCULAR;
     hdma_usart1_rx.Init.Priority = DMA_PRIORITY_LOW;
     hdma_usart1_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
     if (HAL_DMA_Init(&hdma_usart1_rx) != HAL_OK)
@@ -448,13 +448,13 @@ void HAL_SAI_MspInit(SAI_HandleTypeDef* hsai)
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF8_SAI2;
+    GPIO_InitStruct.Alternate = GPIO_AF10_SAI2;
     HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
       /* Peripheral DMA init*/
 
-    hdma_sai2_a.Instance = DMA2_Stream1;
-    hdma_sai2_a.Init.Channel = DMA_CHANNEL_0;
+    hdma_sai2_a.Instance = DMA2_Stream4;
+    hdma_sai2_a.Init.Channel = DMA_CHANNEL_3;
     hdma_sai2_a.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_sai2_a.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_sai2_a.Init.MemInc = DMA_MINC_ENABLE;

@@ -1,2 +1,1 @@
-../Mp3Helix/real/assembly.h:298:21:CLZ	24	static
-../Mp3Helix/real/dequant.c:73:5:xmp3_Dequantize	104	static
+../Mp3Helix/real/dequant.c:73:5:xmp3_Dequantize	96	static

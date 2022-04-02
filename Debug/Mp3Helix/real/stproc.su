@@ -1,5 +1,3 @@
-../Mp3Helix/real/assembly.h:266:21:MULSHIFT32	24	static,ignoring_inline_asm
-../Mp3Helix/real/assembly.h:284:21:FASTABS	24	static,ignoring_inline_asm
-../Mp3Helix/real/stproc.c:64:6:xmp3_MidSideProc	48	static
-../Mp3Helix/real/stproc.c:106:6:xmp3_IntensityProcMPEG1	120	static
-../Mp3Helix/real/stproc.c:212:6:xmp3_IntensityProcMPEG2	208	static
+../Mp3Helix/real/stproc.c:64:6:xmp3_MidSideProc	28	static,ignoring_inline_asm
+../Mp3Helix/real/stproc.c:106:6:xmp3_IntensityProcMPEG1	112	static,ignoring_inline_asm
+../Mp3Helix/real/stproc.c:212:6:xmp3_IntensityProcMPEG2	168	static,ignoring_inline_asm

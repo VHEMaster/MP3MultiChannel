@@ -30,6 +30,15 @@
 #include "stm32f7xx_hal.h"
 #include "fatfs_platform.h"
 
+typedef struct {
+    uint64_t readAll;
+    uint64_t writeAll;
+    uint32_t readLast;
+    uint32_t writeLast;
+    uint32_t readMax;
+    uint32_t writeMax;
+}sSdStats;
+
 /* Exported types --------------------------------------------------------*/
 /**
   * @brief SD Card information structure
@@ -63,6 +72,9 @@
 /* USER CODE BEGIN BSP_H_CODE */
 
 /* Exported functions --------------------------------------------------------*/
+
+sSdStats BSP_SD_GetStats(void);
+
 uint8_t BSP_SD_Init(void);
 uint8_t BSP_SD_ITConfig(void);
 uint8_t BSP_SD_ReadBlocks(uint32_t *pData, uint32_t ReadAddr, uint32_t NumOfBlocks, uint32_t Timeout);

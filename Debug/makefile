@@ -72,7 +72,7 @@ main-build: MP3MultiChannel.elf secondary-outputs
 
 # Tool invocations
 MP3MultiChannel.elf MP3MultiChannel.map: $(OBJS) $(USER_OBJS) E:\STM32CubeIDE\MP3MultiChannel\STM32F746VGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "MP3MultiChannel.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"E:\STM32CubeIDE\MP3MultiChannel\STM32F746VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="MP3MultiChannel.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+	arm-none-eabi-gcc -o "MP3MultiChannel.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"E:\STM32CubeIDE\MP3MultiChannel\STM32F746VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="MP3MultiChannel.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

@@ -1,3 +1,2 @@
-../Mp3Helix/real/buffers.c:65:13:ClearBuffer	24	static
-../Mp3Helix/real/buffers.c:93:13:xmp3_AllocateBuffers	40	static
-../Mp3Helix/real/buffers.c:158:6:xmp3_FreeBuffers	16	static
+../Mp3Helix/real/buffers.c:158:6:xmp3_FreeBuffers	8	static
+../Mp3Helix/real/buffers.c:93:13:xmp3_AllocateBuffers	48	static
