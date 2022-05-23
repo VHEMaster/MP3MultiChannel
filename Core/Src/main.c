@@ -95,14 +95,14 @@ void StartPlayerTask(void *argument);
 #define UART_TX_BUFFER 256
 #define UART_RX_BUFFER 256
 
-#define PLAYERS_COUNT       (8)
+#define PLAYERS_COUNT       (4)
 #define MP3_SAMPLE_SIZE     (1152 * 2)
-#define SAMPLE_BUFFER_SIZE  ((MP3_SAMPLE_SIZE) * 4 / 7)
+#define SAMPLE_BUFFER_SIZE  ((MP3_SAMPLE_SIZE) * 4 / 3)
 #define FILE_BUFFER_SIZE    (2048)
 #define MAX_FILE_PATH       (128)
 
-uint16_t gSampleBuffer[PLAYERS_COUNT][MP3_SAMPLE_SIZE];
-uint32_t gSamplesBuffer[PLAYERS_COUNT][SAMPLE_BUFFER_SIZE];
+int16_t gSampleBuffer[PLAYERS_COUNT][MP3_SAMPLE_SIZE];
+int32_t gSamplesBuffer[PLAYERS_COUNT][SAMPLE_BUFFER_SIZE];
 uint8_t gFileBuffer[PLAYERS_COUNT][FILE_BUFFER_SIZE];
 osMutexId_t gMp3Mutex;
 osMutexId_t gFSMutex;
@@ -127,10 +127,10 @@ typedef struct {
     osMutexId_t mutex;
     osThreadId_t task;
     uint32_t bufferSize;
-    uint32_t *buffer;
+    int32_t *buffer;
     uint8_t *fileBuffer;
     uint32_t fileBufferSize;
-    uint16_t *sampleBuffer;
+    int16_t *sampleBuffer;
     uint32_t sampleBufferSize;
     uint32_t buffer_rd;
     uint32_t buffer_wr;
@@ -176,11 +176,11 @@ static void HandleSaiDma(uint32_t *buffer, uint32_t size)
 
   for(int i = 0; i < PLAYERS_COUNT; i++)
   {
-    if(/* gPlayersData.player[i].playing && */ getavail(gPlayersData.player[i].buffer_wr, gPlayersData.player[i].buffer_rd, gPlayersData.player[i].bufferSize) >= samples_per_channel)
+    if(getavail(gPlayersData.player[i].buffer_wr, gPlayersData.player[i].buffer_rd, gPlayersData.player[i].bufferSize) >= samples_per_channel)
     {
       for(int j = 0; j < samples_per_channel; j++)
       {
-        buffer[j * PLAYERS_COUNT + i] = gPlayersData.player[i].buffer[gPlayersData.player[i].buffer_rd];
+        buffer[((j & ~1) * PLAYERS_COUNT) + (i << 1) + (j & 1)] = gPlayersData.player[i].buffer[gPlayersData.player[i].buffer_rd];
         if(gPlayersData.player[i].buffer_rd + 1 >= gPlayersData.player[i].bufferSize)
           gPlayersData.player[i].buffer_rd = 0;
         else gPlayersData.player[i].buffer_rd++;
@@ -191,7 +191,7 @@ static void HandleSaiDma(uint32_t *buffer, uint32_t size)
       }
       for(int j = 0; j < samples_per_channel; j++)
       {
-        buffer[j * PLAYERS_COUNT + i] = 0;
+        buffer[((j & ~1) * PLAYERS_COUNT) + (i << 1) + (j & 1)] = 0;
       }
     }
   }
@@ -479,9 +479,8 @@ void StartPlayerTask(void *argument)
 
 
   int32_t syncword;
-  uint32_t *buffer;
-  int16_t *stereo = NULL;
-  uint16_t *samplebuffer = NULL;
+  int32_t *buffer;
+  int16_t *samplebuffer = NULL;
   uint8_t *filebuffer = NULL;
   uint32_t filebuffersize = 0;
   uint8_t playing = 0;
@@ -505,12 +504,12 @@ void StartPlayerTask(void *argument)
 
   while(1)
   {
+    filebuffer = playerdata->fileBuffer;
+    filebuffersize = playerdata->fileBufferSize;
+    samplebuffer = playerdata->sampleBuffer;
+    buffer = playerdata->buffer;
+
     if(osMutexAcquire(playerdata->mutex, osWaitForever) == osOK) {
-      filebuffer = playerdata->fileBuffer;
-      filebuffersize = playerdata->fileBufferSize;
-      samplebuffer = playerdata->sampleBuffer;
-      buffer = playerdata->buffer;
-      stereo = (int16_t *)buffer;
       volume = playerdata->volume * 0.01f;
       enabled = playerdata->enabled;
       changed = playerdata->changed;
@@ -657,25 +656,25 @@ void StartPlayerTask(void *argument)
 
       playerdata->file_percentage = ((float)f_tell(&file) / (float)f_size(&file)) * 100.0f;
 
-      while(getfree(playerdata->buffer_wr, playerdata->buffer_rd, playerdata->bufferSize) <= mp3Info.outputSamps / 2) {
+      while(getfree(playerdata->buffer_wr, playerdata->buffer_rd, playerdata->bufferSize) <= mp3Info.outputSamps) {
         osDelay(1);
       }
 
       if(mp3Info.nChans == 2) {
-        for(int i = 0; i < mp3Info.outputSamps;) {
-          stereo[playerdata->buffer_wr * 2] = (float)mp3buffer[i++] * volume;
-          stereo[playerdata->buffer_wr * 2 + 1] = (float)mp3buffer[i++] * volume;
+        for(int i = 0; i < mp3Info.outputSamps; i++) {
+          buffer[playerdata->buffer_wr] = (float)((int32_t)mp3buffer[i] << 16) * volume;
 
           if(playerdata->buffer_wr + 1 >= playerdata->bufferSize)
             playerdata->buffer_wr = 0;
           else playerdata->buffer_wr++;
         }
       } else if(mp3Info.nChans == 1) {
-        for(int i = 0; i < mp3Info.outputSamps; i++) {
-          mp3buffer[i] = (float)mp3buffer[i] * volume;
-          stereo[playerdata->buffer_wr * 2] = mp3buffer[i];
-          stereo[playerdata->buffer_wr * 2 + 1] = mp3buffer[i];
-          playerdata->buffer_wr++;
+        for(int i = 0; i < mp3Info.outputSamps * 2; i++) {
+          buffer[playerdata->buffer_wr] = (float)((int32_t)mp3buffer[i >> 1] << 16) * volume;
+
+          if(playerdata->buffer_wr + 1 >= playerdata->bufferSize)
+            playerdata->buffer_wr = 0;
+          else playerdata->buffer_wr++;
         }
       }
 
@@ -831,7 +830,7 @@ static void MX_SAI2_Init(void)
   hsai_BlockA1.Init.OutputDrive = SAI_OUTPUTDRIVE_DISABLE;
   hsai_BlockA1.Init.NoDivider = SAI_MASTERDIVIDER_ENABLE;
   hsai_BlockA1.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_FULL;
-  hsai_BlockA1.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_48K;
+  hsai_BlockA1.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_44K;
   hsai_BlockA1.Init.SynchroExt = SAI_SYNCEXT_DISABLE;
   hsai_BlockA1.Init.MonoStereoMode = SAI_STEREOMODE;
   hsai_BlockA1.Init.CompandingMode = SAI_NOCOMPANDING;
