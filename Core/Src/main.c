@@ -118,7 +118,6 @@ uint32_t gTdmFinalBuffer[TDM_BUFFER_SIZE] __attribute__((aligned(32)));
 
 typedef struct {
     const char *name;
-    HMP3Decoder decoder;
     char file[MAX_FILE_PATH];
     volatile uint8_t enabled;
     volatile uint8_t playing;
@@ -135,8 +134,8 @@ typedef struct {
     uint32_t buffer_rd;
     uint32_t buffer_wr;
     uint32_t underflow_rd;
-    uint32_t mp3_errors;
     uint32_t fs_errors;
+    uint32_t wav_errors;
     float file_percentage;
 }sPlayerData;
 
@@ -321,7 +320,6 @@ void StartCommTask(void *argument)
   HAL_GPIO_WritePin(LED_D4_GPIO_Port, LED_D4_Pin, GPIO_PIN_SET);
   HAL_GPIO_WritePin(LED_D5_GPIO_Port, LED_D5_Pin, GPIO_PIN_SET);
 
-  gMp3Mutex = osMutexNew(&mutexMp3_attributes);
   gFSMutex = osMutexNew(&mutexFS_attributes);
 
   memset(&gCommData, 0, sizeof(gCommData));
@@ -339,7 +337,7 @@ void StartCommTask(void *argument)
     str = (char *)pvPortMalloc(16); sprintf(str, "mutexPlayer%d", i+1); mutexPlayer_attributes.name = str;
     str = (char *)pvPortMalloc(16); sprintf(str, "taskPlayer%d", i+1); taskPlayer_attributes.name = str;
 
-    sprintf(playersdata->player[i].file, "music/%d.mp3", i+1);
+    sprintf(playersdata->player[i].file, "music/%d.wav", i+1);
 
     playersdata->player[i].enabled = 0;
     playersdata->player[i].playing = 0;
@@ -352,12 +350,12 @@ void StartCommTask(void *argument)
     playersdata->player[i].fileBufferSize = FILE_BUFFER_SIZE;
     playersdata->player[i].fileBuffer = gFileBuffer[i];
 
-    playersdata->player[i].decoder = MP3InitDecoder();
     playersdata->player[i].mutex = osMutexNew(&mutexPlayer_attributes);
     playersdata->player[i].task = osThreadNew(StartPlayerTask, &playersdata->player[i], &taskPlayer_attributes);
   }
 
   HandleSaiDma(gTdmFinalBuffer, TDM_BUFFER_SIZE);
+
   HAL_SAI_Transmit_DMA(&hsai_BlockA1, (uint8_t*)gTdmFinalBuffer, TDM_BUFFER_SIZE);
 
   gTaskIdle = osThreadNew(StartIdleTask, NULL, &taskIdle_attributes);
@@ -475,8 +473,6 @@ void StartCommTask(void *argument)
 void StartPlayerTask(void *argument)
 {
   sPlayerData *playerdata = (sPlayerData *)argument;
-  MP3FrameInfo mp3Info;
-
 
   int32_t syncword;
   int32_t *buffer;
@@ -493,12 +489,20 @@ void StartPlayerTask(void *argument)
   FRESULT res;
   UINT read;
   uint32_t toread = 0;
-  uint32_t mp3read = 0;
-  uint32_t mp3read_prev = 0;
   uint32_t content = 0;
 
   uint8_t *tempfilebuffer;
-  int16_t *mp3buffer;
+
+  uint32_t samplerate = 0;
+  uint32_t chunksize = 0;
+  uint16_t blockalign = 0;
+  uint16_t bitpersample = 0;
+  uint16_t channels = 0;
+  uint16_t format = 0;
+
+  uint32_t output_samples = 0;
+  uint8_t can_play = 0;
+  uint32_t bytes_needed = 0;
 
   playing = 0;
 
@@ -527,6 +531,8 @@ void StartPlayerTask(void *argument)
           osMutexRelease(playerdata->mutex);
           //memset(buffer, 0, buffersize * sizeof(*buffer));
           content = 0;
+          chunksize = 0;
+          can_play = 0;
           osMutexAcquire(gFSMutex, osWaitForever);
           res = f_close(&file);
           osMutexRelease(gFSMutex);
@@ -597,95 +603,109 @@ void StartPlayerTask(void *argument)
         }
       }
 
+      output_samples = 0;
       tempfilebuffer = &filebuffer[filebuffersize - content];
 
-      syncword = MP3FindSyncWord(tempfilebuffer, content);
-      if(syncword <= ERR_MP3_INDATA_UNDERFLOW)
-      {
-        playerdata->mp3_errors++;
-        content = 0;
-        continue;
-      }
-      if(syncword > 0)
-      {
-        content -= syncword;
-        continue;
-      }
-
-      osMutexAcquire(gMp3Mutex, osWaitForever);
-
-      syncword = MP3GetNextFrameInfo(playerdata->decoder, &mp3Info, tempfilebuffer);
-      if(syncword != ERR_MP3_NONE)
-      {
-        osMutexRelease(gMp3Mutex);
-        playerdata->mp3_errors++;
-        if(content > 2) {
-          content -= 2;
+      if(chunksize == 0) {
+        can_play = 0;
+        if(strncmp((char*)&tempfilebuffer[0], "RIFF", 4) == 0 && strncmp((char*)&tempfilebuffer[8], "WAVE", 4) == 0) {
+          tempfilebuffer += 12;
+          content -= 12;
         } else {
-          content = 0;
+          if(content >= 8) {
+            memcpy(&chunksize, &tempfilebuffer[4], sizeof(uint32_t));
+            if(strncmp((char*)tempfilebuffer, "data", 4) == 0) {
+              tempfilebuffer += 8;
+              content -= 8;
+              can_play = 1;
+            } else {
+              if(content >= chunksize) {
+                if(strncmp((char*)tempfilebuffer, "fmt ", 4) == 0) {
+                  tempfilebuffer += 8;
+                  content -= 8;
+
+                  memcpy(&format, &tempfilebuffer[0], sizeof(uint16_t));
+                  memcpy(&channels, &tempfilebuffer[2], sizeof(uint16_t));
+                  memcpy(&samplerate, &tempfilebuffer[4], sizeof(uint32_t));
+                  memcpy(&blockalign, &tempfilebuffer[12], sizeof(uint16_t));
+                  memcpy(&bitpersample, &tempfilebuffer[14], sizeof(uint16_t));
+
+                  tempfilebuffer += chunksize;
+                  content -= chunksize;
+                  chunksize = 0;
+                } else {
+                  tempfilebuffer += chunksize + 8;
+                  content -= chunksize + 8;
+                  chunksize = 0;
+                  //playerdata->wav_errors++;
+                }
+              } else {
+                playerdata->wav_errors++;
+              }
+            }
+          } else {
+            playerdata->wav_errors++;
+          }
         }
-        continue;
-      }
-
-      mp3buffer = (int16_t *)samplebuffer;
-      mp3read_prev = content;
-      mp3read = content;
-
-      if(playerdata == &gPlayersData.player[0] && mp3read_prev == 3678 && f_tell(&file) == 6228) {
-        playerdata->file_percentage++;
 
       }
 
-      //DecodeHuffmanPairs returns -2 while parallel decoding of multiple MP3s :(
-      syncword = MP3Decode(playerdata->decoder, &tempfilebuffer, (int*)&mp3read, mp3buffer, 0);
-      osMutexRelease(gMp3Mutex);
-      content = mp3read;
-
-      if(syncword != ERR_MP3_NONE) {
-        if(playerdata == &gPlayersData.player[0]) {
-          playerdata->file_percentage++;
+      if(can_play) {
+        bytes_needed = 2048;
+        if(bytes_needed > chunksize) {
+          bytes_needed = chunksize;
         }
-        playerdata->mp3_errors++;
-        continue;
-      }
+        if(bytes_needed > content) {
+          bytes_needed = content;
+        }
 
+        chunksize -= bytes_needed;
 
-      if(mp3Info.samprate == 0 || mp3Info.nChans <= 0) {
-        continue;
+        output_samples = bytes_needed / (bitpersample / 8);
+
+        if(bitpersample == 16) {
+          memcpy(samplebuffer, tempfilebuffer, bytes_needed);
+        }
+
+        content -= bytes_needed;
+        tempfilebuffer += bytes_needed;
+
       }
 
       playerdata->file_percentage = ((float)f_tell(&file) / (float)f_size(&file)) * 100.0f;
 
-      while(getfree(playerdata->buffer_wr, playerdata->buffer_rd, playerdata->bufferSize) <= mp3Info.outputSamps) {
-        osDelay(1);
-      }
-
-      if(mp3Info.nChans == 2) {
-        for(int i = 0; i < mp3Info.outputSamps; i++) {
-          buffer[playerdata->buffer_wr] = (float)((int32_t)mp3buffer[i] << 16) * volume;
-
-          if(playerdata->buffer_wr + 1 >= playerdata->bufferSize)
-            playerdata->buffer_wr = 0;
-          else playerdata->buffer_wr++;
+      if(can_play && output_samples > 0 && channels > 0) {
+        while(getfree(playerdata->buffer_wr, playerdata->buffer_rd, playerdata->bufferSize) <= output_samples) {
+          osDelay(1);
         }
-      } else if(mp3Info.nChans == 1) {
-        for(int i = 0; i < mp3Info.outputSamps * 2; i++) {
-          buffer[playerdata->buffer_wr] = (float)((int32_t)mp3buffer[i >> 1] << 16) * volume;
 
-          if(playerdata->buffer_wr + 1 >= playerdata->bufferSize)
-            playerdata->buffer_wr = 0;
-          else playerdata->buffer_wr++;
+        if(channels == 2) {
+          for(int i = 0; i < output_samples; i++) {
+            buffer[playerdata->buffer_wr] = (float)((int32_t)samplebuffer[i] << 16) * volume;
+
+            if(playerdata->buffer_wr + 1 >= playerdata->bufferSize)
+              playerdata->buffer_wr = 0;
+            else playerdata->buffer_wr++;
+          }
+        } else if(channels == 1) {
+          for(int i = 0; i < output_samples * 2; i++) {
+            buffer[playerdata->buffer_wr] = (float)((int32_t)samplebuffer[i >> 1] << 16) * volume;
+
+            if(playerdata->buffer_wr + 1 >= playerdata->bufferSize)
+              playerdata->buffer_wr = 0;
+            else playerdata->buffer_wr++;
+          }
         }
-      }
 
-      playerdata->playing = 1;
+        playerdata->playing = 1;
 
-      taskENTER_CRITICAL();
-      if(xTaskGetTickCount() - gMp3LedLast > 100) {
-        gMp3LedLast = xTaskGetTickCount();
-        HAL_GPIO_TogglePin(LED_D6_GPIO_Port, LED_D6_Pin);
+        taskENTER_CRITICAL();
+        if(xTaskGetTickCount() - gMp3LedLast > 100) {
+          gMp3LedLast = xTaskGetTickCount();
+          HAL_GPIO_TogglePin(LED_D6_GPIO_Port, LED_D6_Pin);
+        }
+        taskEXIT_CRITICAL();
       }
-      taskEXIT_CRITICAL();
 
     } else {
       osDelay(1);
