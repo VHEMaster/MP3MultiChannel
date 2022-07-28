@@ -25,7 +25,12 @@ SD_HandleTypeDef hsd1;
 DMA_HandleTypeDef hdma_sdmmc1_rx;
 DMA_HandleTypeDef hdma_sdmmc1_tx;
 
+DAC_HandleTypeDef hdac;
+DMA_HandleTypeDef hdma_dac1;
+DMA_HandleTypeDef hdma_dac2;
+
 TIM_HandleTypeDef htim5;
+TIM_HandleTypeDef htim7;
 
 osThreadId_t taskCommHandle;
 uint32_t taskCommBuffer[512];
@@ -82,11 +87,13 @@ osMutexAttr_t mutexPlayer_attributes = {
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
+static void MX_DAC_Init(void);
 static void MX_SAI2_Init(void);
 static void MX_SDMMC1_SD_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_IWDG_Init(void);
 static void MX_TIM5_Init(void);
+static void MX_TIM7_Init(void);
 void StartIdleTask(void *argument);
 void StartCommTask(void *argument);
 void StartPlayerTask(void *argument);
@@ -115,6 +122,9 @@ volatile uint32_t gMp3LedLast = 0;
 
 #define TDM_BUFFER_SIZE 576
 uint32_t gTdmFinalBuffer[TDM_BUFFER_SIZE] __attribute__((aligned(32)));
+
+#define DAC_BUFFER_SIZE 512
+uint16_t gDacBuffer[2][DAC_BUFFER_SIZE] __attribute__((aligned(32)));
 
 typedef struct {
     const char *name;
@@ -173,7 +183,7 @@ static void HandleSaiDma(uint32_t *buffer, uint32_t size)
 {
   uint32_t samples_per_channel = size / PLAYERS_COUNT;
 
-  for(int i = 0; i < PLAYERS_COUNT; i++)
+  for(int i = 1; i < PLAYERS_COUNT; i++)
   {
     if(getavail(gPlayersData.player[i].buffer_wr, gPlayersData.player[i].buffer_rd, gPlayersData.player[i].bufferSize) >= samples_per_channel)
     {
@@ -195,7 +205,7 @@ static void HandleSaiDma(uint32_t *buffer, uint32_t size)
     }
   }
 
-  SCB_CleanDCache_by_Addr(buffer, size);
+  SCB_CleanDCache_by_Addr(buffer, size * sizeof(buffer[0]));
 }
 
 void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
@@ -206,6 +216,55 @@ void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
 void HAL_SAI_TxHalfCpltCallback(SAI_HandleTypeDef *hsai)
 {
   HandleSaiDma(&gTdmFinalBuffer[0], TDM_BUFFER_SIZE / 2);
+}
+
+static void HandleDacDma(uint16_t *buffer0, uint16_t *buffer1, uint32_t size)
+{
+  uint32_t samples_per_channel = size / 1 * 2;
+  uint16_t *buffer[2] = { buffer0, buffer1 };
+  uint32_t sample;
+
+  for(int i = 0; i < 1; i++)
+  {
+    if(getavail(gPlayersData.player[i].buffer_wr, gPlayersData.player[i].buffer_rd, gPlayersData.player[i].bufferSize) >= samples_per_channel)
+    {
+      for(int j = 0; j < samples_per_channel; j++)
+      {
+        sample = gPlayersData.player[i].buffer[gPlayersData.player[i].buffer_rd];
+        sample ^= 0x80000000;
+        sample >>= 16;
+        buffer[j & 1][j >> 1] = sample;
+        if(gPlayersData.player[i].buffer_rd + 1 >= gPlayersData.player[i].bufferSize)
+          gPlayersData.player[i].buffer_rd = 0;
+        else gPlayersData.player[i].buffer_rd++;
+      }
+    } else {
+      if(gPlayersData.player[i].playing) {
+        gPlayersData.player[i].underflow_rd++;
+      }
+      for(int j = 0; j < samples_per_channel; j++)
+      {
+        buffer[j & 1][j >> 1] = 0x8000;
+      }
+    }
+  }
+
+  SCB_CleanDCache_by_Addr((uint32_t *)buffer0, size * sizeof(buffer0[0]));
+  SCB_CleanDCache_by_Addr((uint32_t *)buffer1, size * sizeof(buffer1[0]));
+}
+
+void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *hdac)
+{
+  HandleDacDma(&gDacBuffer[0][DAC_BUFFER_SIZE / 2],
+      &gDacBuffer[1][DAC_BUFFER_SIZE / 2],
+      DAC_BUFFER_SIZE / 2);
+}
+
+void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef *hdac)
+{
+  HandleDacDma(&gDacBuffer[0][0],
+      &gDacBuffer[1][0],
+      DAC_BUFFER_SIZE / 2);
 }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
@@ -358,6 +417,10 @@ void StartCommTask(void *argument)
 
   HAL_SAI_Transmit_DMA(&hsai_BlockA1, (uint8_t*)gTdmFinalBuffer, TDM_BUFFER_SIZE);
 
+  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)gDacBuffer[0], DAC_BUFFER_SIZE, DAC_ALIGN_12B_L);
+  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2, (uint32_t *)gDacBuffer[1], DAC_BUFFER_SIZE, DAC_ALIGN_12B_L);
+  HAL_TIM_Base_Start(&htim7);
+
   gTaskIdle = osThreadNew(StartIdleTask, NULL, &taskIdle_attributes);
 
   current = xTaskGetTickCount();
@@ -474,7 +537,6 @@ void StartPlayerTask(void *argument)
 {
   sPlayerData *playerdata = (sPlayerData *)argument;
 
-  int32_t syncword;
   int32_t *buffer;
   int16_t *samplebuffer = NULL;
   uint8_t *filebuffer = NULL;
@@ -724,11 +786,13 @@ int main(void)
 
   MX_GPIO_Init();
   MX_DMA_Init();
+  MX_DAC_Init();
   MX_SAI2_Init();
   MX_SDMMC1_SD_Init();
   MX_USART1_UART_Init();
   //MX_IWDG_Init();
   MX_TIM5_Init();
+  MX_TIM7_Init();
   MX_FATFS_Init();
 
   osKernelInitialize();
@@ -965,6 +1029,51 @@ static void MX_TIM5_Init(void)
 }
 
 /**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 0;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 2449 - 1; //44100Hz
+  htim7.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim7, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -999,6 +1108,37 @@ static void MX_USART1_UART_Init(void)
 
 }
 
+/* DAC init function */
+static void MX_DAC_Init(void)
+{
+
+  DAC_ChannelConfTypeDef sConfig;
+
+    /**DAC Initialization
+    */
+  hdac.Instance = DAC;
+  if (HAL_DAC_Init(&hdac) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+    /**DAC channel OUT1 config
+    */
+  sConfig.DAC_Trigger = DAC_TRIGGER_T7_TRGO;
+  sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+
+  if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+}
+
 /**
   * Enable DMA controller clock
   */
@@ -1006,9 +1146,15 @@ static void MX_DMA_Init(void)
 {
 
   /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
   __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 11, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 11, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
   /* DMA2_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);

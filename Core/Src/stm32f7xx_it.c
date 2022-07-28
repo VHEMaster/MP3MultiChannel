@@ -65,6 +65,8 @@ extern SD_HandleTypeDef hsd1;
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart1_tx;
 extern UART_HandleTypeDef huart1;
+extern DMA_HandleTypeDef hdma_dac1;
+extern DMA_HandleTypeDef hdma_dac2;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -215,6 +217,16 @@ void SDMMC1_IRQHandler(void)
   /* USER CODE BEGIN SDMMC1_IRQn 1 */
 
   /* USER CODE END SDMMC1_IRQn 1 */
+}
+
+void DMA1_Stream5_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_dac1);
+}
+
+void DMA1_Stream6_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_dac2);
 }
 
 /**
