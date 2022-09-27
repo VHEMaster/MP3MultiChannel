@@ -102,7 +102,7 @@ void StartPlayerTask(void *argument);
 #define MAX_FILE_PATH       (128)
 
 int16_t gSampleBuffer[PLAYERS_COUNT][MP3_SAMPLE_SIZE];
-int32_t gSamplesBuffer[PLAYERS_COUNT][SAMPLE_BUFFER_SIZE];
+int16_t gSamplesBuffer[PLAYERS_COUNT][SAMPLE_BUFFER_SIZE];
 uint8_t gFileBuffer[PLAYERS_COUNT][FILE_BUFFER_SIZE];
 osMutexId_t gMp3Mutex;
 osMutexId_t gFSMutex;
@@ -113,8 +113,8 @@ volatile float gCpuLoadMax = 0;
 volatile uint32_t gIdleTick = 1000;
 volatile uint32_t gMp3LedLast = 0;
 
-#define TDM_BUFFER_SIZE 576
-uint32_t gTdmFinalBuffer[TDM_BUFFER_SIZE] __attribute__((aligned(32)));
+#define TDM_BUFFER_SIZE 1152
+uint16_t gTdmFinalBuffer[TDM_BUFFER_SIZE] __attribute__((aligned(32)));
 
 typedef struct {
     const char *name;
@@ -127,7 +127,7 @@ typedef struct {
     osMutexId_t mutex;
     osThreadId_t task;
     uint32_t bufferSize;
-    int32_t *buffer;
+    int16_t *buffer;
     uint8_t *fileBuffer;
     uint32_t fileBufferSize;
     int16_t *sampleBuffer;
@@ -170,9 +170,10 @@ static inline uint32_t getfree(uint32_t wr, uint32_t rd, uint32_t size) {
   return size - getavail(wr, rd, size);
 }
 
-static void HandleSaiDma(uint32_t *buffer, uint32_t size)
+static void HandleSaiDma(uint16_t *buffer, uint32_t size)
 {
-  uint32_t samples_per_channel = size / PLAYERS_COUNT;
+  uint32_t samples_per_channel = size / PLAYERS_COUNT / 2;
+  int index;
 
   for(int i = 0; i < PLAYERS_COUNT; i++)
   {
@@ -180,7 +181,9 @@ static void HandleSaiDma(uint32_t *buffer, uint32_t size)
     {
       for(int j = 0; j < samples_per_channel; j++)
       {
-        buffer[((j & ~1) * PLAYERS_COUNT) + (i << 1) + (j & 1)] = gPlayersData.player[i].buffer[gPlayersData.player[i].buffer_rd];
+        index = (((j & ~1) * PLAYERS_COUNT) + (i << 1) + (j & 1)) << 1;
+        buffer[index] = gPlayersData.player[i].buffer[gPlayersData.player[i].buffer_rd];
+        buffer[index + 1] = 0;
         if(gPlayersData.player[i].buffer_rd + 1 >= gPlayersData.player[i].bufferSize)
           gPlayersData.player[i].buffer_rd = 0;
         else gPlayersData.player[i].buffer_rd++;
@@ -191,12 +194,14 @@ static void HandleSaiDma(uint32_t *buffer, uint32_t size)
       }
       for(int j = 0; j < samples_per_channel; j++)
       {
-        buffer[((j & ~1) * PLAYERS_COUNT) + (i << 1) + (j & 1)] = 0;
+        index = (((j & ~1) * PLAYERS_COUNT) + (i << 1) + (j & 1)) << 1;
+        buffer[index] = 0;
+        buffer[index + 1] = 0;
       }
     }
   }
 
-  SCB_CleanDCache_by_Addr(buffer, size);
+  SCB_CleanDCache_by_Addr((uint32_t *)buffer, size * sizeof(*buffer));
 }
 
 void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
@@ -479,7 +484,7 @@ void StartPlayerTask(void *argument)
 
 
   int32_t syncword;
-  int32_t *buffer;
+  int16_t *buffer;
   int16_t *samplebuffer = NULL;
   uint8_t *filebuffer = NULL;
   uint32_t filebuffersize = 0;
@@ -662,7 +667,7 @@ void StartPlayerTask(void *argument)
 
       if(mp3Info.nChans == 2) {
         for(int i = 0; i < mp3Info.outputSamps; i++) {
-          buffer[playerdata->buffer_wr] = (float)((int32_t)mp3buffer[i] << 16) * volume;
+          buffer[playerdata->buffer_wr] = (float)(mp3buffer[i]) * volume;
 
           if(playerdata->buffer_wr + 1 >= playerdata->bufferSize)
             playerdata->buffer_wr = 0;
@@ -670,7 +675,7 @@ void StartPlayerTask(void *argument)
         }
       } else if(mp3Info.nChans == 1) {
         for(int i = 0; i < mp3Info.outputSamps * 2; i++) {
-          buffer[playerdata->buffer_wr] = (float)((int32_t)mp3buffer[i >> 1] << 16) * volume;
+          buffer[playerdata->buffer_wr] = (float)(mp3buffer[i >> 1]) * volume;
 
           if(playerdata->buffer_wr + 1 >= playerdata->bufferSize)
             playerdata->buffer_wr = 0;
@@ -840,7 +845,7 @@ static void MX_SAI2_Init(void)
   hsai_BlockA1.Instance = SAI2_Block_A;
   hsai_BlockA1.Init.Protocol = SAI_FREE_PROTOCOL;
   hsai_BlockA1.Init.AudioMode = SAI_MODEMASTER_TX;
-  hsai_BlockA1.Init.DataSize = SAI_DATASIZE_32;
+  hsai_BlockA1.Init.DataSize = SAI_DATASIZE_16;
   hsai_BlockA1.Init.FirstBit = SAI_FIRSTBIT_MSB;
   hsai_BlockA1.Init.ClockStrobing = SAI_CLOCKSTROBING_RISINGEDGE;
   hsai_BlockA1.Init.Synchro = SAI_ASYNCHRONOUS;
@@ -859,8 +864,8 @@ static void MX_SAI2_Init(void)
   hsai_BlockA1.FrameInit.FSOffset = SAI_FS_BEFOREFIRSTBIT;
   hsai_BlockA1.SlotInit.FirstBitOffset = 0;
   hsai_BlockA1.SlotInit.SlotSize = SAI_SLOTSIZE_DATASIZE;
-  hsai_BlockA1.SlotInit.SlotNumber = 8;
-  hsai_BlockA1.SlotInit.SlotActive = 0x000000FF;
+  hsai_BlockA1.SlotInit.SlotNumber = 16;
+  hsai_BlockA1.SlotInit.SlotActive = 0x0000FFFF;
   if (HAL_SAI_Init(&hsai_BlockA1) != HAL_OK)
   {
     Error_Handler();
