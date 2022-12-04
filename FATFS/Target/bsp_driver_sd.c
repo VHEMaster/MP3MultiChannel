@@ -1,7 +1,7 @@
 /* USER CODE BEGIN Header */
 /**
  ******************************************************************************
- * @file    bsp_driver_sd.c for F7 (based on stm32756g_eval_sd.c)
+ * @file    bsp_driver_sd.c for H7 (based on stm32h743i_eval_sd.c)
  * @brief   This file includes a generic uSD card driver.
  *          To be completed by the user according to the board used for the project.
  * @note    Some functions generated as weak: they can be overridden by
@@ -22,12 +22,6 @@
  */
 /* USER CODE END Header */
 
-#ifdef OLD_API
-/* kept to avoid issue when migrating old projects. */
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-#else
 /* USER CODE BEGIN FirstSection */
 /* can be used to modify / undefine following code or add new definitions */
 /* USER CODE END FirstSection */
@@ -76,10 +70,10 @@ __weak uint8_t BSP_SD_Init(void)
   if (sd_state == MSD_OK)
   {
     /* Enable wide operation */
-    //if (HAL_SD_ConfigWideBusOperation(&hsd1, SDMMC_BUS_WIDE_4B) != HAL_OK)
-    //{
-    //  sd_state = MSD_ERROR;
-    //}
+    if (HAL_SD_ConfigWideBusOperation(&hsd1, SDMMC_BUS_WIDE_4B) != HAL_OK)
+    {
+      sd_state = MSD_ERROR;
+    }
   }
 
   return sd_state;
@@ -120,7 +114,9 @@ __weak uint8_t BSP_SD_ReadBlocks(uint32_t *pData, uint32_t ReadAddr, uint32_t Nu
   if (HAL_SD_ReadBlocks(&hsd1, (uint8_t *)pData, ReadAddr, NumOfBlocks, Timeout) != HAL_OK)
   {
     sd_state = MSD_ERROR;
-  } else {
+  }
+  else
+  {
     gSdStats.readLast += NumOfBlocks * hsd1.SdCard.BlockSize;
   }
 
@@ -145,7 +141,9 @@ __weak uint8_t BSP_SD_WriteBlocks(uint32_t *pData, uint32_t WriteAddr, uint32_t 
   if (HAL_SD_WriteBlocks(&hsd1, (uint8_t *)pData, WriteAddr, NumOfBlocks, Timeout) != HAL_OK)
   {
     sd_state = MSD_ERROR;
-  } else {
+  }
+  else
+  {
     gSdStats.writeLast += NumOfBlocks * hsd1.SdCard.BlockSize;
   }
 
@@ -170,7 +168,9 @@ __weak uint8_t BSP_SD_ReadBlocks_DMA(uint32_t *pData, uint32_t ReadAddr, uint32_
   if (HAL_SD_ReadBlocks_DMA(&hsd1, (uint8_t *)pData, ReadAddr, NumOfBlocks) != HAL_OK)
   {
     sd_state = MSD_ERROR;
-  } else {
+  }
+  else
+  {
     gSdStats.readLast += NumOfBlocks * hsd1.SdCard.BlockSize;
   }
 
@@ -195,7 +195,9 @@ __weak uint8_t BSP_SD_WriteBlocks_DMA(uint32_t *pData, uint32_t WriteAddr, uint3
   if (HAL_SD_WriteBlocks_DMA(&hsd1, (uint8_t *)pData, WriteAddr, NumOfBlocks) != HAL_OK)
   {
     sd_state = MSD_ERROR;
-  } else {
+  }
+  else
+  {
     gSdStats.writeLast += NumOfBlocks * hsd1.SdCard.BlockSize;
   }
 
@@ -315,7 +317,6 @@ __weak void BSP_SD_ReadCpltCallback(void)
 
 }
 /* USER CODE END CallBacksSection_C */
-#endif
 
 /**
  * @brief  Detects if SD card is correctly plugged in the memory slot or not.

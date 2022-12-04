@@ -1,7 +1,7 @@
 /* USER CODE BEGIN Header */
 /**
  ******************************************************************************
-  * @file    bsp_driver_sd.h (based on stm32756g_eval_sd.h)
+  * @file    bsp_driver_sd.h (based on stm32h743i_eval_sd.h)
   * @brief   This file contains the common defines and functions prototypes for
   *          the bsp_driver_sd.c driver.
   ******************************************************************************
@@ -19,24 +19,24 @@
 /* USER CODE END Header */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __STM32F7_SD_H
-#define __STM32F7_SD_H
+#ifndef __STM32H7_SD_H
+#define __STM32H7_SD_H
 
 #ifdef __cplusplus
  extern "C" {
 #endif
 
 /* Includes ------------------------------------------------------------------*/
-#include "stm32f7xx_hal.h"
+#include "stm32h7xx_hal.h"
 #include "fatfs_platform.h"
 
 typedef struct {
-    uint64_t readAll;
-    uint64_t writeAll;
-    uint32_t readLast;
-    uint32_t writeLast;
-    uint32_t readMax;
-    uint32_t writeMax;
+  uint64_t readAll;
+  uint64_t writeAll;
+  uint32_t readLast;
+  uint32_t writeLast;
+  uint32_t readMax;
+  uint32_t writeMax;
 }sSdStats;
 
 /* Exported types --------------------------------------------------------*/
@@ -63,18 +63,10 @@ typedef struct {
 #define SD_NOT_PRESENT           ((uint8_t)0x00)
 #define SD_DATATIMEOUT           ((uint32_t)100000000)
 
-#ifdef OLD_API
-/* kept to avoid issue when migrating old projects. */
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-#else
 /* USER CODE BEGIN BSP_H_CODE */
+#define SD_DetectIRQHandler()             HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_8)
 
 /* Exported functions --------------------------------------------------------*/
-
-sSdStats BSP_SD_GetStats(void);
-
 uint8_t BSP_SD_Init(void);
 uint8_t BSP_SD_ITConfig(void);
 uint8_t BSP_SD_ReadBlocks(uint32_t *pData, uint32_t ReadAddr, uint32_t NumOfBlocks, uint32_t Timeout);
@@ -86,16 +78,17 @@ uint8_t BSP_SD_GetCardState(void);
 void    BSP_SD_GetCardInfo(BSP_SD_CardInfo *CardInfo);
 uint8_t BSP_SD_IsDetected(void);
 
+sSdStats BSP_SD_GetStats(void);
+
 /* These functions can be modified in case the current settings (e.g. DMA stream)
    need to be changed for specific application needs */
 void    BSP_SD_AbortCallback(void);
 void    BSP_SD_WriteCpltCallback(void);
 void    BSP_SD_ReadCpltCallback(void);
 /* USER CODE END BSP_H_CODE */
-#endif
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __STM32F7_SD_H */
+#endif /* __STM32H7_SD_H */

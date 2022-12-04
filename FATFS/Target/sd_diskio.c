@@ -54,7 +54,7 @@ See BSP_SD_ErrorCallback() and BSP_SD_AbortCallback() below
  * in case of errors in either BSP_SD_ReadCpltCallback() or BSP_SD_WriteCpltCallback()
  * the value by default is as defined in the BSP platform driver otherwise 30 secs
  */
-#define SD_TIMEOUT 5 * 1000
+#define SD_TIMEOUT 30 * 10000
 
 #define SD_DEFAULT_BLOCK_SIZE 512
 
@@ -84,7 +84,7 @@ See BSP_SD_ErrorCallback() and BSP_SD_AbortCallback() below
 * transfer data
 */
 /* USER CODE BEGIN enableScratchBuffer */
-/* #define ENABLE_SCRATCH_BUFFER */
+#define ENABLE_SCRATCH_BUFFER 1
 /* USER CODE END enableScratchBuffer */
 
 /* Private variables ---------------------------------------------------------*/
@@ -641,7 +641,7 @@ void BSP_SD_WriteCpltCallback(void)
    osMessagePut(SDQueueID, WRITE_CPLT_MSG, 0);
 #else
    const uint16_t msg = WRITE_CPLT_MSG;
-   osMessageQueuePut(SDQueueID, (const void *)&msg, 0, 0);
+   osMessageQueuePut(SDQueueID, (const void *)&msg, NULL, 0);
 #endif
 }
 
@@ -660,7 +660,7 @@ void BSP_SD_ReadCpltCallback(void)
    osMessagePut(SDQueueID, READ_CPLT_MSG, 0);
 #else
    const uint16_t msg = READ_CPLT_MSG;
-   osMessageQueuePut(SDQueueID, (const void *)&msg, 0, 0);
+   osMessageQueuePut(SDQueueID, (const void *)&msg, NULL, 0);
 #endif
 }
 

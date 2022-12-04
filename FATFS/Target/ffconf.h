@@ -22,9 +22,8 @@
 /*-----------------------------------------------------------------------------/
 / Additional user header to be used
 /-----------------------------------------------------------------------------*/
-
 #include "main.h"
-#include "stm32f7xx_hal.h"
+#include "stm32h7xx_hal.h"
 #include "bsp_driver_sd.h"
 #include "cmsis_os.h" /* _FS_REENTRANT set to 1 and CMSIS API chosen */
 
@@ -32,13 +31,13 @@
 / Function Configurations
 /-----------------------------------------------------------------------------*/
 
-#define _FS_READONLY         1      /* 0:Read/Write or 1:Read only */
+#define _FS_READONLY         0      /* 0:Read/Write or 1:Read only */
 /* This option switches read-only configuration. (0:Read/Write or 1:Read-only)
 /  Read-only configuration removes writing API functions, f_write(), f_sync(),
 /  f_unlink(), f_mkdir(), f_chmod(), f_rename(), f_truncate(), f_getfree()
 /  and optional writing functions as well. */
 
-#define _FS_MINIMIZE         2      /* 0 to 3 */
+#define _FS_MINIMIZE         0      /* 0 to 3 */
 /* This option defines minimization level to remove some basic API functions.
 /
 /   0: All basic functions are enabled.
@@ -47,7 +46,7 @@
 /   2: f_opendir(), f_readdir() and f_closedir() are removed in addition to 1.
 /   3: f_lseek() function is removed in addition to 2. */
 
-#define _USE_STRFUNC         0      /* 0:Disable or 1-2:Enable */
+#define _USE_STRFUNC         2      /* 0:Disable or 1-2:Enable */
 /* This option switches string functions, f_gets(), f_putc(), f_puts() and
 /  f_printf().
 /
@@ -59,13 +58,13 @@
 /* This option switches filtered directory read functions, f_findfirst() and
 /  f_findnext(). (0:Disable, 1:Enable 2:Enable with matching altname[] too) */
 
-#define _USE_MKFS            0
+#define _USE_MKFS            1
 /* This option switches f_mkfs() function. (0:Disable or 1:Enable) */
 
 #define _USE_FASTSEEK        1
 /* This option switches fast seek feature. (0:Disable or 1:Enable) */
 
-#define	_USE_EXPAND		1
+#define	_USE_EXPAND		0
 /* This option switches f_expand function. (0:Disable or 1:Enable) */
 
 #define _USE_CHMOD		0
@@ -144,7 +143,7 @@
 /
 /  This option has no effect when _LFN_UNICODE == 0. */
 
-#define _FS_RPATH       0 /* 0 to 2 */
+#define _FS_RPATH       2 /* 0 to 2 */
 /* This option configures support of relative path.
 /
 /   0: Disable relative path and remove related functions.
@@ -205,7 +204,7 @@
 / System Configurations
 /----------------------------------------------------------------------------*/
 
-#define _FS_TINY    1      /* 0:Normal or 1:Tiny */
+#define _FS_TINY    0      /* 0:Normal or 1:Tiny */
 /* This option switches tiny buffer configuration. (0:Normal or 1:Tiny)
 /  At the tiny configuration, size of file object (FIL) is reduced _MAX_SS bytes.
 /  Instead of private sector buffer eliminated from the file object, common sector
@@ -216,7 +215,7 @@
 /  When enable exFAT, also LFN needs to be enabled. (_USE_LFN >= 1)
 /  Note that enabling exFAT discards C89 compatibility. */
 
-#define _FS_NORTC	1
+#define _FS_NORTC	0
 #define _NORTC_MON	6
 #define _NORTC_MDAY	4
 #define _NORTC_YEAR	2015
@@ -229,7 +228,7 @@
 /  _NORTC_MDAY and _NORTC_YEAR have no effect.
 /  These options have no effect at read-only configuration (_FS_READONLY = 1). */
 
-#define _FS_LOCK    0     /* 0:Disable or >=1:Enable */
+#define _FS_LOCK    48     /* 0:Disable or >=1:Enable */
 /* The option _FS_LOCK switches file lock function to control duplicated file open
 /  and illegal operation to open objects. This option must be 0 when _FS_READONLY
 /  is 1.
@@ -241,7 +240,9 @@
 /      lock control is independent of re-entrancy. */
 
 #define _FS_REENTRANT    1  /* 0:Disable or 1:Enable */
-#define _FS_TIMEOUT      5000 /* Timeout period in unit of time ticks */
+
+#define _USE_MUTEX       1 /* 0:Disable or 1:Enable */
+#define _FS_TIMEOUT      1000 /* Timeout period in unit of time ticks */
 #define _SYNC_t          osMutexId_t
 /* The option _FS_REENTRANT switches the re-entrancy (thread safe) of the FatFs
 /  module itself. Note that regardless of this option, file access to different
