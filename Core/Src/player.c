@@ -82,8 +82,6 @@ extern UART_HandleTypeDef huart3;
 #define FILE_BUFFER_SIZE    (12288)
 #define MINIMUM_READ        (4096)
 #define MAX_FILE_PATH       (128)
-#define TDM_TEMP_BUFFER_SIZE (TDM_BUFFER_SIZE / CHANNELS_PER_TDM)
-#define TDM_TEMP_HALF_BUFFER_SIZE (TDM_TEMP_BUFFER_SIZE / 2)
 #define TDM_BUFFER_SIZE (TDM_SAMPLES_COUNT * CHANNELS_PER_TDM)
 
 #define RAM_ALIGNED_32 __attribute__((aligned(32)))
@@ -201,40 +199,39 @@ static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
       players = 0;
       channel = tdm * CHANNELS_PER_TDM + lch;
 
-      for(int player = 0; player < PLAYERS_COUNT; player++) {
-        if(gMixer[channel][player]) {
-          samples = gPlayersTempBuffer[player];
+      int player = channel / 2;
 
-          if(gPlayersAvailable[player] == 0) {
-            gPlayersAvailable[player] = getavail(gPlayersData.player[player].buffer_wr, gPlayersData.player[player].buffer_rd, gPlayersData.player[player].bufferSize) >= samples_per_channel ? 1 : -1;
-            if(gPlayersAvailable[player] == -1) {
-              if(gPlayersData.player[player].playing) {
-                gPlayersData.player[player].underflow_rd++;
-              }
-            }
-          }
-          if(gPlayersAvailable[player] > 0) {
-            players++;
-            if(gPlayersAvailable[player] == 1) {
-              gPlayersAvailable[player] = 2;
+      samples = gPlayersTempBuffer[player];
 
-              for(int i = 0; i < samples_per_channel; i++) {
-                samples[i] = gPlayersData.player[player].buffer[gPlayersData.player[player].buffer_rd];
-
-                if(gPlayersData.player[player].buffer_rd + 1 >= gPlayersData.player[player].bufferSize)
-                  gPlayersData.player[player].buffer_rd = 0;
-                else gPlayersData.player[player].buffer_rd++;
-
-                gChannelSamples[i] += samples[i];
-              }
-            } else if(gPlayersAvailable[player] == 2) {
-              for(int i = 0; i < samples_per_channel; i++) {
-                gChannelSamples[i] += samples[i];
-              }
-            }
+      if(gPlayersAvailable[player] == 0) {
+        gPlayersAvailable[player] = getavail(gPlayersData.player[player].buffer_wr, gPlayersData.player[player].buffer_rd, gPlayersData.player[player].bufferSize) >= samples_per_channel ? 1 : -1;
+        if(gPlayersAvailable[player] == -1) {
+          if(gPlayersData.player[player].playing) {
+            gPlayersData.player[player].underflow_rd++;
           }
         }
       }
+      if(gPlayersAvailable[player] > 0) {
+        players++;
+        if(gPlayersAvailable[player] == 1) {
+          gPlayersAvailable[player] = 2;
+
+          for(int i = 0; i < samples_per_channel; i++) {
+            samples[i] = gPlayersData.player[player].buffer[gPlayersData.player[player].buffer_rd];
+
+            if(gPlayersData.player[player].buffer_rd + 1 >= gPlayersData.player[player].bufferSize)
+              gPlayersData.player[player].buffer_rd = 0;
+            else gPlayersData.player[player].buffer_rd++;
+
+            gChannelSamples[i] += samples[i];
+          }
+        } else if(gPlayersAvailable[player] == 2) {
+          for(int i = 0; i < samples_per_channel; i++) {
+            gChannelSamples[i] += samples[i];
+          }
+        }
+      }
+
       if(players) {
         for(int i = 0; i < samples_per_channel; i++) {
           sample = gChannelSamples[i] / players / 4;
