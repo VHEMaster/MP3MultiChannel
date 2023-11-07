@@ -63,7 +63,6 @@ extern SAI_HandleTypeDef hsai_BlockB1;
 extern SAI_HandleTypeDef hsai_BlockA2;
 extern SAI_HandleTypeDef hsai_BlockB2;
 extern DAC_HandleTypeDef hdac1;
-extern DAC_HandleTypeDef hdac2;
 
 extern TIM_HandleTypeDef htim5;
 extern TIM_HandleTypeDef htim6;
@@ -78,14 +77,16 @@ extern UART_HandleTypeDef huart3;
 #define PLAYERS_COUNT       (32)
 
 #define TDM_COUNT           (4)
-#define DAC_COUNT           (2)
+#define DAC_COUNT           (1)
 
 #define DMA_SAMPLES_COUNT   (128)
 
 #define CHANNELS_TDM_COUNT  (64)
 #define CHANNELS_DAC_COUNT  (2)
 
-#define CHANNELS_COUNT      (CHANNELS_TDM_COUNT + CHANNELS_DAC_COUNT)
+#define CHANNELS_COUNT        (CHANNELS_TDM_COUNT + CHANNELS_DAC_COUNT)
+#define CHANNELS_TDM_OFFSET   (0)
+#define CHANNELS_DAC_OFFSET   (CHANNELS_TDM_COUNT)
 
 #define CHANNELS_PER_TDM    (CHANNELS_TDM_COUNT / TDM_COUNT)
 #define CHANNELS_PER_DAC    (CHANNELS_DAC_COUNT / DAC_COUNT)
@@ -117,8 +118,8 @@ volatile uint32_t gIdleTick = 10000;
 volatile uint32_t gMp3LedLast = 0;
 
 static SAI_HandleTypeDef  *const gSai[TDM_COUNT] = { &hsai_BlockA1, &hsai_BlockB1, &hsai_BlockA2, &hsai_BlockB2 };
-static DAC_HandleTypeDef  *const gDac[DAC_COUNT] = { &hdac1, &hdac1 };
-static uint32_t const gDacChannel[DAC_COUNT] = { DAC_CHANNEL_1, DAC_CHANNEL_2 };
+static DAC_HandleTypeDef  *const gDac[DAC_COUNT] = { &hdac1 };
+static uint32_t const gDacChannel[DAC_COUNT] = { DAC_CHANNEL_1 };
 static RAM_ALIGNED_32 int16_t gTdmFinalBuffers[TDM_COUNT][TDM_BUFFER_SIZE] = {{0}};
 static RAM_ALIGNED_32 uint16_t gDacFinalBuffers[DAC_COUNT][DAC_BUFFER_SIZE] = {{0}};
 static RAM_DTCM int16_t gPlayersTempBuffer[PLAYERS_COUNT][DMA_SAMPLES_COUNT] = {{0}};
@@ -258,7 +259,7 @@ static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
       players = 0;
       channel = tdm * CHANNELS_PER_TDM + lch;
 
-      players = HandlePlayers(samples_per_channel, channel);
+      players = HandlePlayers(samples_per_channel, channel + CHANNELS_TDM_OFFSET);
       if(players) {
         for(int i = 0; i < samples_per_channel; i++) {
           sample = gChannelSamples[i] / players / 4;
@@ -283,7 +284,7 @@ static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
   DEBUG_TIME = TICK_US - debug_time;
 }
 
-static void HandleDacDma(uint16_t *buffer[DAC_COUNT], uint32_t size)
+static void HandleDacDma(uint16_t *buffer, uint32_t size)
 {
   uint32_t samples_per_channel = size / CHANNELS_PER_DAC;
   uint32_t channel;
@@ -295,31 +296,29 @@ static void HandleDacDma(uint16_t *buffer[DAC_COUNT], uint32_t size)
 
   memset(gPlayersAvailable, 0, sizeof(gPlayersAvailable));
 
-  for(int dac = 0; dac < DAC_COUNT; dac++) {
-    for(int lch = 0; lch < CHANNELS_PER_DAC; lch++) {
-      players = 0;
-      channel = dac * CHANNELS_PER_DAC + lch;
+  for(int lch = 0; lch < CHANNELS_PER_DAC; lch++) {
+    players = 0;
+    channel = CHANNELS_PER_DAC + lch;
 
-      players = HandlePlayers(samples_per_channel, channel);
-      if(players) {
-        for(int i = 0; i < samples_per_channel; i++) {
-          sample = gChannelSamples[i] / players;
-          if(sample > SHRT_MAX) sample = SHRT_MAX;
-          else if(sample < SHRT_MIN) sample = SHRT_MIN;
-          buffer[dac][i * CHANNELS_PER_DAC + lch] = sample ^ 0x8000;
-          gChannelSamples[i] = 0;
-        }
-      } else {
-        for(int i = 0; i < samples_per_channel; i++) {
-          buffer[dac][i * CHANNELS_PER_DAC + lch] = 0;
-          gChannelSamples[i] = 0;
-        }
+    players = HandlePlayers(samples_per_channel, channel + CHANNELS_DAC_OFFSET);
+    if(players) {
+      for(int i = 0; i < samples_per_channel; i++) {
+        sample = gChannelSamples[i] / players;
+        if(sample > SHRT_MAX) sample = SHRT_MAX;
+        else if(sample < SHRT_MIN) sample = SHRT_MIN;
+        buffer[i * CHANNELS_PER_DAC + lch] = sample ^ 0x8000;
+        gChannelSamples[i] = 0;
       }
-
-
+    } else {
+      for(int i = 0; i < samples_per_channel; i++) {
+        buffer[i * CHANNELS_PER_DAC + lch] = 0;
+        gChannelSamples[i] = 0;
+      }
     }
-    SCB_CleanDCache_by_Addr((uint32_t *)buffer[dac], size * sizeof(*buffer[dac]));
+
+
   }
+  SCB_CleanDCache_by_Addr((uint32_t *)buffer, size * sizeof(*buffer));
 
 
   DEBUG_TIME = TICK_US - debug_time;
@@ -354,22 +353,22 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *hdac)
 {
-  uint16_t *buffers[DAC_COUNT];
-  for(int i = 0; i < DAC_COUNT; i++)
-    buffers[i] = &gDacFinalBuffers[i][DAC_BUFFER_SIZE / 2];
+  uint16_t *buffer;
+
+  buffer = &gDacFinalBuffers[0][DAC_BUFFER_SIZE / 2];
 
   if(gDac[0] == hdac)
-    HandleDacDma(buffers, DAC_BUFFER_SIZE / 2);
+    HandleDacDma(buffer, DAC_BUFFER_SIZE / 2);
 }
 
 void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef *hdac)
 {
-  uint16_t *buffers[DAC_COUNT];
-  for(int i = 0; i < DAC_COUNT; i++)
-    buffers[i] = &gDacFinalBuffers[i][0];
+  uint16_t *buffer;
+
+  buffer = &gDacFinalBuffers[0][0];
 
   if(gDac[0] == hdac)
-    HandleDacDma(buffers, DAC_BUFFER_SIZE / 2);
+    HandleDacDma(buffer, DAC_BUFFER_SIZE / 2);
 }
 
 osStatus_t Comm_Transmit(sCommData *commdata, char *cmd, ...)
@@ -482,19 +481,24 @@ void player_start(void)
     HAL_SAI_Init(gSai[i]);
   }
 
+  for(int i = 0; i < DAC_COUNT; i++)
+    HAL_DAC_ConvHalfCpltCallbackCh1(gDac[i]);
+  for(int i = 0; i < DAC_COUNT; i++)
+    HAL_DAC_ConvCpltCallbackCh1(gDac[i]);
+
   for(int i = 0; i < TDM_COUNT; i++)
     HAL_SAI_TxHalfCpltCallback(gSai[i]);
   for(int i = 0; i < TDM_COUNT; i++)
     HAL_SAI_TxCpltCallback(gSai[i]);
 
-
   for(int i = 0; i < DAC_COUNT; i++)
-    HAL_DAC_Start_DMA(gDac[i], gDacChannel[i], (uint32_t *)gDacFinalBuffers[i], DAC_BUFFER_SIZE, DAC_ALIGN_12B_L);
+    HAL_DACEx_DualStart_DMA(gDac[i], gDacChannel[i], (uint32_t *)gDacFinalBuffers[i], DAC_BUFFER_SIZE, DAC_ALIGN_12B_L);
 
   for(int i = 1; i < TDM_COUNT; i++)
     HAL_SAI_Transmit_DMA(gSai[i], (uint8_t *)gTdmFinalBuffers[i], TDM_BUFFER_SIZE);
   if(TDM_COUNT > 0)
     HAL_SAI_Transmit_DMA(gSai[0], (uint8_t *)gTdmFinalBuffers[0], TDM_BUFFER_SIZE);
+
   HAL_TIM_Base_Start(&htim6);
 
 
