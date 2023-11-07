@@ -62,9 +62,11 @@ extern SAI_HandleTypeDef hsai_BlockA1;
 extern SAI_HandleTypeDef hsai_BlockB1;
 extern SAI_HandleTypeDef hsai_BlockA2;
 extern SAI_HandleTypeDef hsai_BlockB2;
-
+extern DAC_HandleTypeDef hdac1;
+extern DAC_HandleTypeDef hdac2;
 
 extern TIM_HandleTypeDef htim5;
+extern TIM_HandleTypeDef htim6;
 
 extern UART_HandleTypeDef huart3;
 
@@ -73,18 +75,28 @@ extern UART_HandleTypeDef huart3;
 #define UART_TX_BUFFER 256
 #define UART_RX_BUFFER 256
 
-#define TDM_COUNT           (4)
-#define CHANNELS_COUNT      (64)
 #define PLAYERS_COUNT       (32)
-#define TDM_SAMPLES_COUNT   (128)
-#define CHANNELS_PER_TDM    (CHANNELS_COUNT / TDM_COUNT)
+
+#define TDM_COUNT           (4)
+#define DAC_COUNT           (2)
+
+#define DMA_SAMPLES_COUNT   (128)
+
+#define CHANNELS_TDM_COUNT  (64)
+#define CHANNELS_DAC_COUNT  (2)
+
+#define CHANNELS_COUNT      (CHANNELS_TDM_COUNT + CHANNELS_DAC_COUNT)
+
+#define CHANNELS_PER_TDM    (CHANNELS_TDM_COUNT / TDM_COUNT)
+#define CHANNELS_PER_DAC    (CHANNELS_DAC_COUNT / DAC_COUNT)
+
 #define SAMPLE_BUFFER_SIZE  (3072)
 #define FILE_BUFFER_SIZE    (12288)
 #define MINIMUM_READ        (4096)
 #define MAX_FILE_PATH       (128)
-#define TDM_TEMP_BUFFER_SIZE (TDM_BUFFER_SIZE / CHANNELS_PER_TDM)
-#define TDM_TEMP_HALF_BUFFER_SIZE (TDM_TEMP_BUFFER_SIZE / 2)
-#define TDM_BUFFER_SIZE (TDM_SAMPLES_COUNT * CHANNELS_PER_TDM)
+
+#define TDM_BUFFER_SIZE (DMA_SAMPLES_COUNT * CHANNELS_PER_TDM)
+#define DAC_BUFFER_SIZE (DMA_SAMPLES_COUNT * CHANNELS_PER_DAC)
 
 #define RAM_ALIGNED_32 __attribute__((aligned(32)))
 #define RAM_D1 __attribute__((section(".RamD1")))
@@ -105,9 +117,12 @@ volatile uint32_t gIdleTick = 10000;
 volatile uint32_t gMp3LedLast = 0;
 
 static SAI_HandleTypeDef  *const gSai[TDM_COUNT] = { &hsai_BlockA1, &hsai_BlockB1, &hsai_BlockA2, &hsai_BlockB2 };
+static DAC_HandleTypeDef  *const gDac[DAC_COUNT] = { &hdac1, &hdac1 };
+static uint32_t const gDacChannel[DAC_COUNT] = { DAC_CHANNEL_1, DAC_CHANNEL_2 };
 static RAM_ALIGNED_32 int16_t gTdmFinalBuffers[TDM_COUNT][TDM_BUFFER_SIZE] = {{0}};
-static RAM_DTCM int16_t gPlayersTempBuffer[PLAYERS_COUNT][TDM_SAMPLES_COUNT] = {{0}};
-static RAM_DTCM int32_t gChannelSamples[TDM_SAMPLES_COUNT] = {0};
+static RAM_ALIGNED_32 uint16_t gDacFinalBuffers[DAC_COUNT][DAC_BUFFER_SIZE] = {{0}};
+static RAM_DTCM int16_t gPlayersTempBuffer[PLAYERS_COUNT][DMA_SAMPLES_COUNT] = {{0}};
+static RAM_DTCM int32_t gChannelSamples[DMA_SAMPLES_COUNT] = {0};
 static RAM_DTCM int8_t gPlayersAvailable[PLAYERS_COUNT] = {0};
 
 typedef struct {
@@ -183,13 +198,55 @@ volatile uint32_t DEBUG_TIME = 0;
 volatile uint32_t DEBUG_PERIOD = 0;
 uint32_t debug_time = 0;
 
+static int HandlePlayers(uint32_t samples_per_channel, uint32_t channel)
+{
+  int players = 0;
+  int16_t *samples;
+
+  for(int player = 0; player < PLAYERS_COUNT; player++) {
+    if(gMixer[channel][player]) {
+      samples = gPlayersTempBuffer[player];
+
+      if(gPlayersAvailable[player] == 0) {
+        gPlayersAvailable[player] = getavail(gPlayersData.player[player].buffer_wr, gPlayersData.player[player].buffer_rd, gPlayersData.player[player].bufferSize) >= samples_per_channel ? 1 : -1;
+        if(gPlayersAvailable[player] == -1) {
+          if(gPlayersData.player[player].playing) {
+            gPlayersData.player[player].underflow_rd++;
+          }
+        }
+      }
+      if(gPlayersAvailable[player] > 0) {
+        players++;
+        if(gPlayersAvailable[player] == 1) {
+          gPlayersAvailable[player] = 2;
+
+          for(int i = 0; i < samples_per_channel; i++) {
+            samples[i] = gPlayersData.player[player].buffer[gPlayersData.player[player].buffer_rd];
+
+            if(gPlayersData.player[player].buffer_rd + 1 >= gPlayersData.player[player].bufferSize)
+              gPlayersData.player[player].buffer_rd = 0;
+            else gPlayersData.player[player].buffer_rd++;
+
+            gChannelSamples[i] += samples[i];
+          }
+        } else if(gPlayersAvailable[player] == 2) {
+          for(int i = 0; i < samples_per_channel; i++) {
+            gChannelSamples[i] += samples[i];
+          }
+        }
+      }
+    }
+  }
+
+  return players;
+}
+
 static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
 {
   uint32_t samples_per_channel = size / CHANNELS_PER_TDM;
   uint32_t channel;
   int32_t sample;
-  int16_t *samples;
-  int32_t players;
+  int players;
 
   DEBUG_PERIOD = TICK_US - debug_time;
   debug_time = TICK_US;
@@ -201,40 +258,7 @@ static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
       players = 0;
       channel = tdm * CHANNELS_PER_TDM + lch;
 
-      for(int player = 0; player < PLAYERS_COUNT; player++) {
-        if(gMixer[channel][player]) {
-          samples = gPlayersTempBuffer[player];
-
-          if(gPlayersAvailable[player] == 0) {
-            gPlayersAvailable[player] = getavail(gPlayersData.player[player].buffer_wr, gPlayersData.player[player].buffer_rd, gPlayersData.player[player].bufferSize) >= samples_per_channel ? 1 : -1;
-            if(gPlayersAvailable[player] == -1) {
-              if(gPlayersData.player[player].playing) {
-                gPlayersData.player[player].underflow_rd++;
-              }
-            }
-          }
-          if(gPlayersAvailable[player] > 0) {
-            players++;
-            if(gPlayersAvailable[player] == 1) {
-              gPlayersAvailable[player] = 2;
-
-              for(int i = 0; i < samples_per_channel; i++) {
-                samples[i] = gPlayersData.player[player].buffer[gPlayersData.player[player].buffer_rd];
-
-                if(gPlayersData.player[player].buffer_rd + 1 >= gPlayersData.player[player].bufferSize)
-                  gPlayersData.player[player].buffer_rd = 0;
-                else gPlayersData.player[player].buffer_rd++;
-
-                gChannelSamples[i] += samples[i];
-              }
-            } else if(gPlayersAvailable[player] == 2) {
-              for(int i = 0; i < samples_per_channel; i++) {
-                gChannelSamples[i] += samples[i];
-              }
-            }
-          }
-        }
-      }
+      players = HandlePlayers(samples_per_channel, channel);
       if(players) {
         for(int i = 0; i < samples_per_channel; i++) {
           sample = gChannelSamples[i] / players / 4;
@@ -257,7 +281,48 @@ static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
 
 
   DEBUG_TIME = TICK_US - debug_time;
+}
 
+static void HandleDacDma(uint16_t *buffer[DAC_COUNT], uint32_t size)
+{
+  uint32_t samples_per_channel = size / CHANNELS_PER_DAC;
+  uint32_t channel;
+  int32_t sample;
+  int players;
+
+  DEBUG_PERIOD = TICK_US - debug_time;
+  debug_time = TICK_US;
+
+  memset(gPlayersAvailable, 0, sizeof(gPlayersAvailable));
+
+  for(int dac = 0; dac < DAC_COUNT; dac++) {
+    for(int lch = 0; lch < CHANNELS_PER_DAC; lch++) {
+      players = 0;
+      channel = dac * CHANNELS_PER_DAC + lch;
+
+      players = HandlePlayers(samples_per_channel, channel);
+      if(players) {
+        for(int i = 0; i < samples_per_channel; i++) {
+          sample = gChannelSamples[i] / players;
+          if(sample > SHRT_MAX) sample = SHRT_MAX;
+          else if(sample < SHRT_MIN) sample = SHRT_MIN;
+          buffer[dac][i * CHANNELS_PER_DAC + lch] = sample ^ 0x8000;
+          gChannelSamples[i] = 0;
+        }
+      } else {
+        for(int i = 0; i < samples_per_channel; i++) {
+          buffer[dac][i * CHANNELS_PER_DAC + lch] = 0;
+          gChannelSamples[i] = 0;
+        }
+      }
+
+
+    }
+    SCB_CleanDCache_by_Addr((uint32_t *)buffer[dac], size * sizeof(*buffer[dac]));
+  }
+
+
+  DEBUG_TIME = TICK_US - debug_time;
 }
 
 void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
@@ -285,6 +350,26 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
   if(huart == gCommData.huart) {
     osSemaphoreRelease(gCommData.tx_sem);
   }
+}
+
+void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef *hdac)
+{
+  uint16_t *buffers[DAC_COUNT];
+  for(int i = 0; i < DAC_COUNT; i++)
+    buffers[i] = &gDacFinalBuffers[i][DAC_BUFFER_SIZE / 2];
+
+  if(gDac[0] == hdac)
+    HandleDacDma(buffers, DAC_BUFFER_SIZE / 2);
+}
+
+void HAL_DAC_ConvHalfCpltCallbackCh1(DAC_HandleTypeDef *hdac)
+{
+  uint16_t *buffers[DAC_COUNT];
+  for(int i = 0; i < DAC_COUNT; i++)
+    buffers[i] = &gDacFinalBuffers[i][0];
+
+  if(gDac[0] == hdac)
+    HandleDacDma(buffers, DAC_BUFFER_SIZE / 2);
 }
 
 osStatus_t Comm_Transmit(sCommData *commdata, char *cmd, ...)
@@ -402,10 +487,16 @@ void player_start(void)
   for(int i = 0; i < TDM_COUNT; i++)
     HAL_SAI_TxCpltCallback(gSai[i]);
 
+
+  for(int i = 0; i < DAC_COUNT; i++)
+    HAL_DAC_Start_DMA(gDac[i], gDacChannel[i], (uint32_t *)gDacFinalBuffers[i], DAC_BUFFER_SIZE, DAC_ALIGN_12B_L);
+
   for(int i = 1; i < TDM_COUNT; i++)
     HAL_SAI_Transmit_DMA(gSai[i], (uint8_t *)gTdmFinalBuffers[i], TDM_BUFFER_SIZE);
   if(TDM_COUNT > 0)
     HAL_SAI_Transmit_DMA(gSai[0], (uint8_t *)gTdmFinalBuffers[0], TDM_BUFFER_SIZE);
+  HAL_TIM_Base_Start(&htim6);
+
 
   memset(&gCommData, 0, sizeof(gCommData));
   gCommData.huart = &huart3;
