@@ -65,7 +65,6 @@ void Error_Handler(void);
 #define LED3_RED_GPIO_Port GPIOA
 #define SDMMC1_DETECT_Pin GPIO_PIN_4
 #define SDMMC1_DETECT_GPIO_Port GPIOD
-
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

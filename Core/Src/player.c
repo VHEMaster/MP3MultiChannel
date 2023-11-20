@@ -298,9 +298,9 @@ static void HandleDacDma(uint16_t *buffer, uint32_t size)
 
   for(int lch = 0; lch < CHANNELS_PER_DAC; lch++) {
     players = 0;
-    channel = CHANNELS_PER_DAC + lch;
+    channel = CHANNELS_DAC_OFFSET + lch;
 
-    players = HandlePlayers(samples_per_channel, channel + CHANNELS_DAC_OFFSET);
+    players = HandlePlayers(samples_per_channel, channel);
     if(players) {
       for(int i = 0; i < samples_per_channel; i++) {
         sample = gChannelSamples[i] / players;
