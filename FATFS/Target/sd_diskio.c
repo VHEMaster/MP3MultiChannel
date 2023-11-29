@@ -274,6 +274,10 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
   if (!((uint32_t)buff & 0x3))
   {
 #endif
+#if (ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
+    alignedAddr = (uint32_t)buff & ~0x1F;
+    SCB_CleanDCache_by_Addr((uint32_t*)alignedAddr, count*BLOCKSIZE + ((uint32_t)buff - alignedAddr));
+#endif
     /* Fast path cause destination buffer is correctly aligned */
     ret = BSP_SD_ReadBlocks_DMA((uint32_t*)buff, (uint32_t)(sector), count);
 
@@ -329,6 +333,9 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
 
       for (i = 0; i < count; i++)
       {
+#if (ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
+        SCB_CleanDCache_by_Addr((uint32_t*)scratch, BLOCKSIZE);
+#endif
         ret = BSP_SD_ReadBlocks_DMA((uint32_t*)scratch, (uint32_t)sector++, 1);
         if (ret == MSD_OK )
         {

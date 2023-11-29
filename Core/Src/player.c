@@ -92,8 +92,8 @@ extern UART_HandleTypeDef huart3;
 #define CHANNELS_PER_DAC    (CHANNELS_DAC_COUNT / DAC_COUNT)
 
 #define SAMPLE_BUFFER_SIZE  (3072)
-#define FILE_BUFFER_SIZE    (12288)
-#define MINIMUM_READ        (4096)
+#define FILE_BUFFER_SIZE    (10240)
+#define MINIMUM_READ        (1024)
 #define MAX_FILE_PATH       (128)
 
 #define TDM_BUFFER_SIZE (DMA_SAMPLES_COUNT * CHANNELS_PER_TDM)
@@ -195,10 +195,6 @@ static inline uint32_t getfree(uint32_t wr, uint32_t rd, uint32_t size) {
   return size - getavail(wr, rd, size);
 }
 
-volatile uint32_t DEBUG_TIME = 0;
-volatile uint32_t DEBUG_PERIOD = 0;
-uint32_t debug_time = 0;
-
 static int HandlePlayers(uint32_t samples_per_channel, uint32_t channel)
 {
   int players = 0;
@@ -249,9 +245,6 @@ static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
   int32_t sample;
   int players;
 
-  DEBUG_PERIOD = TICK_US - debug_time;
-  debug_time = TICK_US;
-
   memset(gPlayersAvailable, 0, sizeof(gPlayersAvailable));
 
   for(int tdm = 0; tdm < TDM_COUNT; tdm++) {
@@ -262,7 +255,7 @@ static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
       players = HandlePlayers(samples_per_channel, channel + CHANNELS_TDM_OFFSET);
       if(players) {
         for(int i = 0; i < samples_per_channel; i++) {
-          sample = gChannelSamples[i] / players / 4;
+          sample = gChannelSamples[i] / players; // / 4;
           if(sample > SHRT_MAX) sample = SHRT_MAX;
           else if(sample < SHRT_MIN) sample = SHRT_MIN;
           buffer[tdm][i * CHANNELS_PER_TDM + lch] = sample;
@@ -279,9 +272,6 @@ static void HandleSaiDma(int16_t *buffer[TDM_COUNT], uint32_t size)
     }
     SCB_CleanDCache_by_Addr((uint32_t *)buffer[tdm], size * sizeof(*buffer[tdm]));
   }
-
-
-  DEBUG_TIME = TICK_US - debug_time;
 }
 
 static void HandleDacDma(uint16_t *buffer, uint32_t size)
@@ -290,9 +280,6 @@ static void HandleDacDma(uint16_t *buffer, uint32_t size)
   uint32_t channel;
   int32_t sample;
   int players;
-
-  DEBUG_PERIOD = TICK_US - debug_time;
-  debug_time = TICK_US;
 
   memset(gPlayersAvailable, 0, sizeof(gPlayersAvailable));
 
@@ -319,9 +306,6 @@ static void HandleDacDma(uint16_t *buffer, uint32_t size)
 
   }
   SCB_CleanDCache_by_Addr((uint32_t *)buffer, size * sizeof(*buffer));
-
-
-  DEBUG_TIME = TICK_US - debug_time;
 }
 
 void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
@@ -656,7 +640,7 @@ void player_start(void)
     }
     taskEXIT_CRITICAL();
 
-    osDelay(1);
+    osDelay(50);
 
     tms = HAL_GetTick();
 
@@ -693,9 +677,10 @@ void player_start(void)
           if(gPlayersData.player[i].playing)
             players++;
         }
+        glitches = 0;
         for(int i = 0; i < PLAYERS_COUNT; i++) {
-                	  glitches += gPlayersData.player[i].underflow_rd;
-                }
+            glitches += gPlayersData.player[i].underflow_rd;
+        }
 
         Comm_Transmit(&gCommData, "SD: %.1fKB/s Max: %.1fKB/s Avg: %.1fKB/s\r\n"
             "CPU: %.1f%% Max: %.1f%% Avg: %.1f%%\r\n"
@@ -715,8 +700,11 @@ void player_start(void)
             ram_avg / 1024.0f,
 
             PLAYERS_COUNT, players, glitches);
+        break;
       }
     }
+
+    osDelay(50);
   }
 }
 
@@ -1016,7 +1004,7 @@ void StartPlayerTask(void *arg)
 
     } else {
       playerdata->playing = 0;
-      osDelay(10);
+      osDelay(100);
     }
   }
 }
